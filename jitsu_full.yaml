@@ -67,7 +67,7 @@ spec:
             - --appendfsync
             - everysec
             - --maxmemory
-            - 3gb
+            - 11gb
             - --maxmemory-policy
             - allkeys-lru
             - '--save ""'
