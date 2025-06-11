@@ -1,0 +1,232 @@
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jitsu-stack
+---
+# Redis Headless Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: jitsu-stack
+spec:
+  ports:
+    - port: 6379
+      name: redis
+  clusterIP: None
+  selector:
+    app: redis
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: jitsu-stack
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+# Redis StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: jitsu-stack
+spec:
+  serviceName: "redis-headless"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      tolerations:
+        - key: "redis-only"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      nodeSelector:
+        redis-dedicated: "true"
+      containers:
+        - name: redis
+          image: redis:6
+          ports:
+            - containerPort: 6379
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --maxmemory
+            - 3gb
+            - --maxmemory-policy
+            - allkeys-lru
+            - '--save ""'
+          volumeMounts:
+            - mountPath: /data
+              name: redis-storage
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "12Gi"
+              cpu: "3"
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: gp2
+---
+# Postgres PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: jitsu-stack
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: gp2
+---
+# Postgres Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: jitsu-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          env:
+            - name: POSTGRES_DB
+              value: jitsu
+            - name: POSTGRES_USER
+              value: jitsu
+            - name: POSTGRES_PASSWORD
+              value: jitsu
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-storage
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+# Postgres Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: jitsu-stack
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+# Jitsu Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jitsu
+  namespace: jitsu-stack
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: jitsu
+  template:
+    metadata:
+      labels:
+        app: jitsu
+    spec:
+      containers:
+        - name: jitsu
+          image: jitsucom/jitsu:latest
+          env:
+            - name: CONFIGURATOR_ENABLED
+              value: "true"
+            - name: PGHOST
+              value: postgres.jitsu-stack.svc.cluster.local
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: jitsu
+            - name: PGPASSWORD
+              value: jitsu
+            - name: PGDATABASE
+              value: jitsu
+            - name: REDIS_URL
+              value: redis://redis.jitsu-stack.svc.cluster.local:6379
+            - name: BULKER_FLUSH_TIMEOUT_SEC
+              value: "3"
+            - name: BULKER_FLUSH_SIZE
+              value: "100"
+            - name: BULKER_WORKERS
+              value: "8"
+            - name: BULKER_MAX_PARALLEL_BATCHES
+              value: "10"
+            - name: DESTINATIONS__AMPLITUDE__USE_COMPRESSION
+              value: "true"
+          ports:
+            - containerPort: 8000
+            - containerPort: 8001
+          resources:
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+---
+# Jitsu Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jitsu
+  namespace: jitsu-stack
+spec:
+  selector:
+    app: jitsu
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+    - name: internal
+      port: 8001
+      targetPort: 8001
+
