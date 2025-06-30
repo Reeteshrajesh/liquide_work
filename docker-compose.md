@@ -375,3 +375,10 @@ This setup is **perfectly sufficient** if:
 | Redis      | Internal-only, Docker-level network isolation   |
 | Docker     | Controlled using `docker-compose`, volumes used |
 | Jitsu UI   | Can be SSO/OIDC enabled for team access         |
+
+
+
+
+
+docker pull jitsucom/jitsu:1.44.8 (after that these have redis support)
+may be tag of latest is 1.44.9
