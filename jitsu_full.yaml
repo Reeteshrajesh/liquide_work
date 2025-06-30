@@ -1,9 +1,10 @@
+---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: jitsu-stack
 ---
-# Redis Headless Service (for StatefulSet)
+# Redis Headless Service (StatefulSet)
 apiVersion: v1
 kind: Service
 metadata:
@@ -13,7 +14,7 @@ spec:
   ports:
     - port: 6379
       name: redis
-  clusterIP: None  # Headless service for Redis StatefulSet
+  clusterIP: None
   selector:
     app: redis
 ---
@@ -38,7 +39,7 @@ metadata:
   namespace: jitsu-stack
 spec:
   serviceName: "redis-headless"
-  replicas: 1  # One Redis pod, can scale to 2 for redundancy
+  replicas: 1
   selector:
     matchLabels:
       app: redis
@@ -47,13 +48,6 @@ spec:
       labels:
         app: redis
     spec:
-      tolerations:
-        - key: "redis-only"
-          operator: "Equal"
-          value: "true"
-          effect: "NoSchedule"
-      nodeSelector:
-        redis-dedicated: "true"  # Ensure Redis runs on a dedicated node if needed
       containers:
         - name: redis
           image: redis:6
@@ -66,23 +60,24 @@ spec:
             - --appendfsync
             - everysec
             - --maxmemory
-            - 11gb  # Adjust maxmemory to 8GB (adjust based on your needs)
+            - 1gb
             - --maxmemory-policy
-            - allkeys-lru  # Eviction policy: Least Recently Used
-            - '--save ""'  # Disable periodic snapshots
-            - --no-appendfsync-on-rewrite  # Improve AOF rewrite performance
+            - allkeys-lru
+            - '--save ""'
+            - --no-appendfsync-on-rewrite
             - "yes"
-            - --dir /data  # Ensure AOF file is stored on persistent volume
+            - --dir
+            - /data
           volumeMounts:
             - mountPath: /data
               name: redis-storage
           resources:
             requests:
-              memory: "2Gi"
-              cpu: "500m"
+              memory: "512Mi"
+              cpu: "200m"
             limits:
-              memory: "12Gi"
-              cpu: "3"
+              memory: "1Gi"
+              cpu: "500m"
   volumeClaimTemplates:
     - metadata:
         name: redis-storage
@@ -91,8 +86,8 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 50Gi  # Adjust storage for Redis data
-        storageClassName: gp2  # Use gp3 for better performance (SSD)
+            storage: 20Gi
+        storageClassName: gp3
 ---
 # PostgreSQL PVC
 apiVersion: v1
@@ -105,8 +100,8 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi  # Adjusted storage size for PostgreSQL
-  storageClassName: gp2  # SSD-backed storage
+      storage: 20Gi
+  storageClassName: gp3
 ---
 # PostgreSQL Deployment
 apiVersion: apps/v1
@@ -142,9 +137,12 @@ spec:
             - mountPath: /var/lib/postgresql/data
               name: postgres-storage
           resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
             limits:
-              memory: "2Gi"
-              cpu: "1"
+              memory: "512Mi"
+              cpu: "500m"
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
@@ -170,7 +168,7 @@ metadata:
   name: jitsu
   namespace: jitsu-stack
 spec:
-  replicas: 4  # Scaling Jitsu to 5 pods for better availability and throughput
+  replicas: 4
   selector:
     matchLabels:
       app: jitsu
@@ -179,6 +177,13 @@ spec:
       labels:
         app: jitsu
     spec:
+      tolerations:
+        - key: "jitsu-only"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      nodeSelector:
+        jitsu-dedicated: "true"
       containers:
         - name: jitsu
           image: jitsucom/jitsu:latest
@@ -202,7 +207,7 @@ spec:
             - name: BULKER_FLUSH_SIZE
               value: "2000"
             - name: BULKER_WORKERS
-              value: "32"  # Increased workers for higher throughput
+              value: "32"
             - name: BULKER_MAX_PARALLEL_BATCHES
               value: "20"
             - name: DESTINATIONS__AMPLITUDE__USE_COMPRESSION
@@ -211,9 +216,12 @@ spec:
             - containerPort: 8000
             - containerPort: 8001
           resources:
-            limits:
+            requests:
               memory: "2Gi"
-              cpu: "1"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
 ---
 # Jitsu Service
 apiVersion: v1
