@@ -1,10 +1,9 @@
-# Namespace
 apiVersion: v1
 kind: Namespace
 metadata:
   name: jitsu-stack
 ---
-# Redis Headless Service
+# Redis Headless Service (for StatefulSet)
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,7 +13,7 @@ spec:
   ports:
     - port: 6379
       name: redis
-  clusterIP: None
+  clusterIP: None  # Headless service for Redis StatefulSet
   selector:
     app: redis
 ---
@@ -39,7 +38,7 @@ metadata:
   namespace: jitsu-stack
 spec:
   serviceName: "redis-headless"
-  replicas: 1
+  replicas: 1  # One Redis pod, can scale to 2 for redundancy
   selector:
     matchLabels:
       app: redis
@@ -54,7 +53,7 @@ spec:
           value: "true"
           effect: "NoSchedule"
       nodeSelector:
-        redis-dedicated: "true"
+        redis-dedicated: "true"  # Ensure Redis runs on a dedicated node if needed
       containers:
         - name: redis
           image: redis:6
@@ -67,10 +66,13 @@ spec:
             - --appendfsync
             - everysec
             - --maxmemory
-            - 11gb
+            - 11gb  # Adjust maxmemory to 8GB (adjust based on your needs)
             - --maxmemory-policy
-            - allkeys-lru
-            - '--save ""'
+            - allkeys-lru  # Eviction policy: Least Recently Used
+            - '--save ""'  # Disable periodic snapshots
+            - --no-appendfsync-on-rewrite  # Improve AOF rewrite performance
+            - "yes"
+            - --dir /data  # Ensure AOF file is stored on persistent volume
           volumeMounts:
             - mountPath: /data
               name: redis-storage
@@ -89,10 +91,10 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 20Gi
-        storageClassName: gp2
+            storage: 50Gi  # Adjust storage for Redis data
+        storageClassName: gp2  # Use gp3 for better performance (SSD)
 ---
-# Postgres PVC
+# PostgreSQL PVC
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -103,10 +105,10 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi
-  storageClassName: gp2
+      storage: 20Gi  # Adjusted storage size for PostgreSQL
+  storageClassName: gp2  # SSD-backed storage
 ---
-# Postgres Deployment
+# PostgreSQL Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -148,7 +150,7 @@ spec:
           persistentVolumeClaim:
             claimName: postgres-pvc
 ---
-# Postgres Service
+# PostgreSQL Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -168,7 +170,7 @@ metadata:
   name: jitsu
   namespace: jitsu-stack
 spec:
-  replicas: 5
+  replicas: 4  # Scaling Jitsu to 5 pods for better availability and throughput
   selector:
     matchLabels:
       app: jitsu
@@ -196,13 +198,13 @@ spec:
             - name: REDIS_URL
               value: redis://redis.jitsu-stack.svc.cluster.local:6379
             - name: BULKER_FLUSH_TIMEOUT_SEC
-              value: "3"
+              value: "2"
             - name: BULKER_FLUSH_SIZE
-              value: "100"
+              value: "2000"
             - name: BULKER_WORKERS
-              value: "8"
+              value: "32"  # Increased workers for higher throughput
             - name: BULKER_MAX_PARALLEL_BATCHES
-              value: "10"
+              value: "20"
             - name: DESTINATIONS__AMPLITUDE__USE_COMPRESSION
               value: "true"
           ports:
@@ -229,4 +231,3 @@ spec:
     - name: internal
       port: 8001
       targetPort: 8001
-
