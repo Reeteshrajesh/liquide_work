@@ -315,7 +315,3 @@ kubectl get pods -n jitsu-stack
 ## 📝 Contact & Support
 
 If you have questions or need assistance, open an issue or contact your platform administrator.
-
----
-
-```
