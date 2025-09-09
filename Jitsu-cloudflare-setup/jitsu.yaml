@@ -1,0 +1,43 @@
+# jitsu.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jitsu
+  namespace: jitsu-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jitsu
+  template:
+    metadata:
+      labels:
+        app: jitsu
+    spec:
+      containers:
+        - name: jitsu
+          image: jitsucom/jitsu:latest
+          ports:
+            - containerPort: 8000 # ingestion
+            - containerPort: 8001 # UI
+          env:
+            - name: REDIS_URL
+              value: redis://redis:6379
+            - name: DATABASE_URL
+              value: postgres://jitsu:jitsu123@postgres:5432/jitsu?sslmode=disable
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jitsu
+  namespace: jitsu-test
+spec:
+  selector:
+    app: jitsu
+  ports:
+    - name: ingestion
+      port: 8000
+      targetPort: 8000
+    - name: ui
+      port: 8001
+      targetPort: 8001
