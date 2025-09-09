@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jitsu Event Tester</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-4xl mx-auto p-6 space-y-6">
+    <header class="space-y-2">
+      <h1 class="text-2xl font-bold">Jitsu Event Tester</h1>
+      <p class="text-sm text-slate-600">Quickly send test events to your Jitsu ingestion endpoint and inspect responses.</p>
+    </header>
+
+    <section class="grid gap-4 md:grid-cols-2">
+      <div class="bg-white rounded-2xl shadow p-5 space-y-3">
+        <h2 class="font-semibold">Endpoints</h2>
+        <label class="block text-sm">Ingestion URL
+          <input id="ingestUrl" class="mt-1 w-full rounded-xl border p-2" value="https://jitsu-ingest.lqtisttist.shop/api/v1/event" />
+        </label>
+        <label class="block text-sm">UI URL (reference)
+          <input id="uiUrl" class="mt-1 w-full rounded-xl border p-2" value="https://jitsu-ui.lqtisttist.shop" />
+        </label>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-5 space-y-3">
+        <h2 class="font-semibold">Authentication</h2>
+        <label class="block text-sm">JS Key
+          <input id="jsKey" class="mt-1 w-full rounded-xl border p-2" value="js.vju0a21tsk3seojkpoa7gh.bdfsyaytgqq9bcvz4wba1c" />
+        </label>
+        <div class="text-xs text-slate-600 leading-5">
+          Try one of these (toggle below):
+          <ul class="list-disc pl-5 mt-1">
+            <li><code>X-Auth-Token: &lt;JS Key&gt;</code></li>
+            <li><code>Authorization: Bearer &lt;JS Key&gt;</code></li>
+            <li>Query param <code>?token=&lt;JS Key&gt;</code></li>
+          </ul>
+        </div>
+        <div class="flex items-center gap-4">
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" id="useXAuth" class="accent-slate-700" checked /> X-Auth-Token header
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" id="useBearer" class="accent-slate-700" /> Authorization: Bearer
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" id="useQuery" class="accent-slate-700" /> token query param
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-2xl shadow p-5 space-y-3">
+      <h2 class="font-semibold">Event Builder</h2>
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="text-sm">Event Type
+          <input id="eventType" class="mt-1 w-full rounded-xl border p-2" value="test_event" />
+        </label>
+        <label class="text-sm">User ID
+          <input id="userId" class="mt-1 w-full rounded-xl border p-2" value="user_123" />
+        </label>
+      </div>
+      <label class="block text-sm">Properties (JSON)
+        <textarea id="props" class="mt-1 w-full rounded-xl border p-2 font-mono text-sm" rows="8">{
+  "source": "event-tester",
+  "page": window.location.href,
+  "referrer": document.referrer,
+  "random": Math.random().toString(36).slice(2),
+  "ts_client": new Date().toISOString()
+}</textarea>
+      </label>
+      <div class="flex gap-2 flex-wrap">
+        <button id="btnSend" class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">Send Custom Event</button>
+        <button id="btnPage" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200">Send Page View</button>
+        <button id="btnIdentify" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200">Send Identify</button>
+        <button id="btnClear" class="px-4 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100">Clear Output</button>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-2xl shadow p-5 space-y-3">
+      <h2 class="font-semibold">Response</h2>
+      <pre id="out" class="bg-slate-950 text-slate-100 rounded-xl p-4 overflow-auto text-xs min-h-[160px]"></pre>
+    </section>
+
+    <footer class="text-xs text-slate-500">
+      Note: CORS policies on your ingestion host must allow this page's origin. If you see a CORS error, host this file on an origin allowed by Cloudflare/Jitsu or use server-side testing.
+    </footer>
+  </div>
+
+<script>
+function log(msg, obj) {
+  const out = document.getElementById('out');
+  const line = typeof obj !== 'undefined' ? `${msg} \n${JSON.stringify(obj, null, 2)}` : msg;
+  out.textContent += `\n${line}\n`;
+}
+function clearOut(){ document.getElementById('out').textContent=''; }
+
+async function sendEvent(payload, name) {
+  const ingestBase = document.getElementById('ingestUrl').value.trim();
+  const jsKey = document.getElementById('jsKey').value.trim();
+  const useXAuth = document.getElementById('useXAuth').checked;
+  const useBearer = document.getElementById('useBearer').checked;
+  const useQuery = document.getElementById('useQuery').checked;
+
+  let url = ingestBase;
+  if (useQuery) {
+    const u = new URL(url);
+    u.searchParams.set('token', jsKey);
+    url = u.toString();
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (useXAuth) headers['X-Auth-Token'] = jsKey;
+  if (useBearer) headers['Authorization'] = `Bearer ${jsKey}`;
+
+  log(`→ Sending ${name} to ${url} with headers:`, headers);
+  log('→ Payload:', payload);
+  try {
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), mode: 'cors', credentials: 'omit' });
+    const text = await res.text();
+    log(`← Response ${res.status} ${res.statusText}`, { body: text });
+  } catch (e) {
+    log('✖ Request failed', { error: String(e) });
+  }
+}
+
+function basePayload(event_type, user_id, properties) {
+  return {
+    event_type,
+    user_id,
+    anonymous_id: user_id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
+    context: {
+      user_agent: navigator.userAgent,
+      url: window.location.href,
+      referrer: document.referrer || undefined,
+      ip: "$remote" // Let Jitsu/CF infer client IP if supported
+    },
+    properties,
+    sent_at: new Date().toISOString()
+  };
+}
+
+function parseProps(){
+  try {
+    // eslint-disable-next-line no-new-func
+    return Function('window','document',`return (${document.getElementById('props').value})`)(window, document);
+  } catch (e) {
+    alert('Properties JSON is invalid: ' + e);
+    throw e;
+  }
+}
+
+document.getElementById('btnSend').addEventListener('click', () => {
+  const p = parseProps();
+  const payload = basePayload(document.getElementById('eventType').value, document.getElementById('userId').value, p);
+  sendEvent(payload, 'custom_event');
+});
+
+document.getElementById('btnPage').addEventListener('click', () => {
+  const p = parseProps();
+  p.pageview = true;
+  const payload = basePayload('page_view', document.getElementById('userId').value, p);
+  sendEvent(payload, 'page_view');
+});
+
+document.getElementById('btnIdentify').addEventListener('click', () => {
+  const p = parseProps();
+  p.traits = { plan: 'pro', role: 'tester', ...(p.traits||{}) };
+  const payload = basePayload('identify', document.getElementById('userId').value, p);
+  sendEvent(payload, 'identify');
+});
+
+document.getElementById('btnClear').addEventListener('click', clearOut);
+</script>
+</body>
+</html>
